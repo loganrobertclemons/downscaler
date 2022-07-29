@@ -1,32 +1,82 @@
 package plugin
 
 import (
+	"context"
 	"fmt"
 
+	"github.com/pkg/errors"
+	"github.com/spf13/cobra"
+	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/kubectl/pkg/cmd/util"
 )
 
-func RunPlugin(configFlags *genericclioptions.ConfigFlags, outputCh chan string) error {
-	config, err := configFlags.ToRESTConfig()
+func RunPlugin(configFlags *genericclioptions.ConfigFlags, cmd *cobra.Command) error {
+	factory := util.NewFactory(configFlags)
+	clientConfig := factory.ToRawKubeConfigLoader()
+	config, err := factory.ToRESTConfig()
+
 	if err != nil {
-		return fmt.Errorf("failed to read kubeconfig: %w", err)
+		return errors.Wrap(err, "failed to read kubeconfig")
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return fmt.Errorf("failed to create clientset: %w", err)
+		return errors.Wrap(err, "failed to create clientset")
 	}
 
-	namespaces, err := clientset.CoreV1().Namespaces().List(metav1.ListOptions{})
+	namespace, _, err := clientConfig.Namespace()
 	if err != nil {
-		return fmt.Errorf("failed to list namespaces: %w", err)
+		return errors.WithMessage(err, "Failed getting namespace")
 	}
 
-	for _, namespace := range namespaces.Items {
-		outputCh <- fmt.Sprintf("Namespace %s", namespace.Name)
+	if getFlagBool(cmd, "all-namespaces") {
+		namespace = ""
 	}
+
+	// build the pod defination we want to deploy
+	pod := getPodObject()
+
+	pods, err := clientset.CoreV1().Pods(namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Created Pod: ", pods.Name)
 
 	return nil
+}
+
+// func getPodObject() *core.Pod {
+// 	return &core.Pod{
+// 		ObjectMeta: metav1.ObjectMeta{
+// 			Name: "my-test-pod",
+// 			Labels: map[string]string{
+// 				"app": "demo",
+// 			},
+// 		},
+// 		Spec: core.PodSpec{
+// 			Containers: []core.Container{
+// 				{
+// 					Name:            "busybox",
+// 					Image:           "busybox",
+// 					ImagePullPolicy: core.PullIfNotPresent,
+// 					Command: []string{
+// 						"sleep",
+// 						"3600",
+// 					},
+// 				},
+// 			},
+// 		},
+	}
+}
+
+// Gets the the flag value as a boolean, otherwise returns false if the flag value is nil
+func getFlagBool(cmd *cobra.Command, flag string) bool {
+	b, err := cmd.Flags().GetBool(flag)
+	if err != nil {
+		return false
+	}
+	return b
 }

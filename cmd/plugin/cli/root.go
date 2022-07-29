@@ -1,17 +1,14 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/loganrobertclemons/kubectl-loadsim/pkg/logger"
 	"github.com/loganrobertclemons/kubectl-loadsim/pkg/plugin"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/tj/go-spin"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
@@ -20,8 +17,11 @@ var (
 )
 
 func RootCmd() *cobra.Command {
+	var ingress, egress, allNamespaces bool
+	var pod string
+
 	cmd := &cobra.Command{
-		Use:           "kubectl-loadsim",
+		Use:           "kubectl-np-viewer",
 		Short:         "",
 		Long:          `.`,
 		SilenceErrors: true,
@@ -33,42 +33,41 @@ func RootCmd() *cobra.Command {
 			log := logger.NewLogger()
 			log.Info("")
 
-			s := spin.New()
 			finishedCh := make(chan bool, 1)
-			namespaceName := make(chan string, 1)
 			go func() {
-				lastNamespaceName := ""
 				for {
 					select {
 					case <-finishedCh:
 						fmt.Printf("\r")
 						return
-					case n := <-namespaceName:
-						lastNamespaceName = n
-					case <-time.After(time.Millisecond * 100):
-						if lastNamespaceName == "" {
-							fmt.Printf("\r  \033[36mSearching for namespaces\033[m %s", s.Next())
-						} else {
-							fmt.Printf("\r  \033[36mSearching for namespaces\033[m %s (%s)", s.Next(), lastNamespaceName)
-						}
 					}
 				}
 			}()
+
 			defer func() {
 				finishedCh <- true
 			}()
 
-			if err := plugin.RunPlugin(KubernetesConfigFlags, namespaceName); err != nil {
-				return errors.Unwrap(err)
+			if err := plugin.RunPlugin(KubernetesConfigFlags, cmd); err != nil {
+				return err
 			}
-
-			log.Info("")
-
 			return nil
 		},
 	}
 
 	cobra.OnInitialize(initConfig)
+
+	cmd.Flags().BoolVarP(&ingress, "ingress", "i", false,
+		"Only selects network policies rules of type ingress")
+
+	cmd.Flags().BoolVarP(&egress, "egress", "e", false,
+		"Only selects network policies rules of type egress")
+
+	cmd.Flags().BoolVarP(&allNamespaces, "all-namespaces", "A", false,
+		"Selects network policies rules from all namespaces")
+
+	cmd.Flags().StringVarP(&pod, "pod", "p", "",
+		"Only selects network policies rules applied to a specific pod")
 
 	KubernetesConfigFlags = genericclioptions.NewConfigFlags(false)
 	KubernetesConfigFlags.AddFlags(cmd.Flags())
