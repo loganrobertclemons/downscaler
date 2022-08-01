@@ -21,7 +21,7 @@ func RootCmd() *cobra.Command {
 	var pod string
 
 	cmd := &cobra.Command{
-		Use:           "kubectl-np-viewer",
+		Use:           "kubectl-downscaler",
 		Short:         "",
 		Long:          `.`,
 		SilenceErrors: true,
